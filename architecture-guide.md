@@ -189,7 +189,7 @@ flowchart LR
         RI[Repository Interface]
     end
     
-    WF -->|"1. Calls for logic/validation/entity creation"| BP
+    WF -->|"1. Calls for logic/validation"| BP
     WF -->|"2. Calls for data access (fetch/persist)"| RI
     BP -->|"Returns result or raises BusinessRuleException"| WF
     RI -->|"Returns Domain Entity / Optional / List"| WF
