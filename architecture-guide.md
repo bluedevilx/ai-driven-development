@@ -244,6 +244,36 @@ flowchart LR
     class EH handler
 ```
 
+```mermaid
+flowchart BT
+    U[Client Application / User]
+    EH[Global Exception Handlers]
+    
+    subgraph Components
+        DA[Database Adapter]
+        RImpl[Repository Implementation]
+        RI[Repository Interface]
+        OTH[Other Adapters]
+        BP[Business Process]
+        WF[Workflow]
+        DI[Dependency Injection]
+        RR[Route Function]
+    end
+    
+    DA -->|"ConnectionError"| RImpl
+    RImpl -->|"DB Error"| WF
+    RI -->|"NotFound/Exception"| WF
+    OTH -->|"API Timeout/etc."| WF
+    BP -->|"BusinessRuleException"| EH
+    WF -->|"Unhandled exceptions"| EH
+    DI -->|"Dependency exceptions"| EH
+    RR -->|"Mapping exceptions"| EH
+    EH -->|"HTTP Error Response"| U
+    
+    classDef handler fill:#ffe4e1,stroke:#a33,stroke-width:1px
+    class EH handler
+```
+
 ## 7. Technology Stack (Primary)
 
 *   **Language:** Python 3.11+
