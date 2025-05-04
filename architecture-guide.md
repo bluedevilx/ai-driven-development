@@ -183,22 +183,22 @@ This diagram illustrates the primary flow for a typical request involving data a
 ```mermaid
 flowchart LR
     WF[Workflow]
-
+    
     subgraph DomainLayer["Application Core / Domain Layer"]
         BP[Business Process]
         RI[Repository Interface]
     end
-
+    
     WF -->|"1. Calls for logic/validation/entity creation"| BP
     WF -->|"2. Calls for data access (fetch/persist)"| RI
     BP -->|"Returns result or raises BusinessRuleException"| WF
     RI -->|"Returns Domain Entity / Optional / List"| WF
-
+    
     classDef workflow fill:#d6f9d6,stroke:#3a3,stroke-width:2px
     classDef bp fill:#d6d6f9,stroke:#33a,stroke-width:2px
     classDef repo fill:#f9f9d6,stroke:#aa3,stroke-width:2px
     classDef domain fill:#e6ffe6,stroke:#3a3,stroke-width:1px
-
+    
     class WF workflow
     class BP bp
     class RI repo
