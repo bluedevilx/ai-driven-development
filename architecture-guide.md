@@ -1,4 +1,4 @@
-# Application Architecture Guide
+# Application Architecture Guide (v2.1)
 
 ## 1. Introduction & Philosophy
 
@@ -28,11 +28,65 @@ This guide defines the architectural standards for building our backend API appl
     *   **High Cohesion:** Components within a module are strongly related.
     *   **Low Coupling:** Modules minimize dependencies on each other, interacting through well-defined interfaces (API Layers, Workflow Layers, potentially shared libraries).
 
-## 3. Layered Architecture - The Core Pattern
+## 3. Architecture Choice: Modular Monolith vs. Microservices
+
+A common alternative architecture is Microservices, where the application is decomposed into multiple independently deployable services, each managing its own data and communicating over a network. While powerful for large, complex systems with independent scaling needs, we have deliberately chosen the **Modular Monolith** approach for our standard architecture.
+
+**3.1. Comparison:**
+
+| Feature                 | Modular Monolith (Our Approach)                                    | Microservices Architecture                                      |
+| :---------------------- | :----------------------------------------------------------------- | :-------------------------------------------------------------- |
+| **Deployment Unit**     | Single Application                                                 | Multiple Independent Services                                   |
+| **Codebase**            | Single Repository (typically)                                      | Multiple Repositories (typically)                               |
+| **Data Management**     | Single Database (typically, with schemas per module)               | Each service owns its own database/schema                     |
+| **Communication**       | Internal Function/Method Calls                                     | Network Calls (REST, gRPC, Messaging Queues)                  |
+| **Transactions**        | Local DB Transactions                                              | Distributed Transactions (complex: Sagas, 2PC - often avoided) |
+| **Initial Complexity**  | **Lower** (less infrastructure overhead, simpler local dev)        | **Higher** (requires robust CI/CD, service discovery, IPC)     |
+| **Operational Overhead**| **Lower** (fewer moving parts to monitor, deploy, manage)         | **Higher** (monitoring, logging, tracing across services)       |
+| **Development Velocity**| **Higher Initially** (less coordination, simpler changes)          | Can be higher *at scale* with independent teams, but slower start |
+| **Scalability**         | Scale the entire monolith; DB can be bottleneck                  | Scale individual services independently                         |
+| **Technology Diversity**| Limited (single stack usually)                                   | High (each service can use different tech - a benefit & cost) |
+| **Fault Isolation**     | Lower (error in one module *can* affect others)                    | Higher (failure in one service less likely to cascade directly) |
+| **Team Structure**      | Suited for smaller/medium teams or teams working cross-functionally| Suited for larger orgs with teams aligned to specific services |
+
+**3.2. Rationale for Choosing Modular Monolith:**
+
+Based on our guiding principles (**Simplicity First, Pragmatism**) and typical project scope, the Modular Monolith offers significant advantages, particularly in the early-to-mid stages of an application's lifecycle:
+
+1.  **Reduced Initial Complexity:** Avoids the significant upfront investment in infrastructure and tooling required for a robust microservices environment (service discovery, distributed tracing, complex deployment pipelines, inter-service communication patterns).
+2.  **Faster Initial Development:** Direct method calls are simpler and faster than implementing and managing network communication. Refactoring across module boundaries within the monolith is easier than coordinating changes across separate service APIs.
+3.  **Simplified Operations:** Monitoring, logging, deployment, and local development setup are considerably simpler with a single application unit and database.
+4.  **Easier Transaction Management:** Standard atomic database transactions handle data consistency within the monolith, avoiding the complexity of distributed transaction patterns needed in microservices.
+5.  **Sufficient Scalability (Initially):** For many applications, scaling the monolith vertically (more CPU/RAM) or horizontally (multiple instances behind a load balancer) alongside standard database scaling techniques provides adequate performance for a long time. Performance bottlenecks are often in specific modules or database interactions, which can be optimized within the monolith structure.
+
+**3.3. Evolution Path to Microservices (When Needed):**
+
+Our **Layered Architecture** and **Modular Monolith** approach are explicitly designed to *facilitate* future decomposition into microservices *if and when concrete needs arise*. It does **not** preclude moving to microservices; it simply avoids the *premature* cost and complexity.
+
+**How this architecture enables the transition:**
+
+1.  **Well-Defined Module Boundaries:** The internal structure, organized by business capability (ideally mirroring directories like `app/domain/workflows/employee_workflow.py`, `app/domain/business_process/employee_bp.py`, etc.), provides natural seams for extraction.
+2.  **Clear Interfaces (Workflow Layer):** The methods defined in the **Workflow Layer** often serve as the basis for the API contract of a potential new microservice. A call like `await employee_workflow.get_employee_details(emp_id)` within the monolith translates naturally to an API call `GET /employees/{emp_id}` on a new `employee-service`.
+3.  **Repository Pattern:** Each module accesses data via its own repository interface. When extracting a service, that service takes ownership of its corresponding database tables/schema and its repository implementation. Other services needing that data would then call the new service's API instead of its old internal repository.
+4.  **Decoupling via Adapters:** Interactions with external systems are already encapsulated in adapters, making it easier to move those interactions into a dedicated service if needed.
+
+**The Process (Conceptual):**
+
+1.  **Identify Candidate Module:** Based on specific drivers (e.g., independent scaling needs for the "reporting" module, different technology requirements for a "machine-learning" module, distinct team ownership for "payments"). This decision requires justification via an **ADR**.
+2.  **Define Service API:** Use the existing Workflow methods as a starting point to define the new service's public API contract (e.g., OpenAPI spec).
+3.  **Extract Code:** Move the relevant Routes (if exposing directly), Workflow, Business Process, Entities, Repository Interface, and Repository Implementation code for that module into a new, separate project/repository.
+4.  **Data Migration/Isolation:** Isolate the database schema/tables owned by the new service. This might involve schema migration or setting up a new database instance.
+5.  **Replace Internal Calls with Network Calls:** In the original monolith (or other services), replace direct calls to the extracted module's Workflow/Repository with network calls (e.g., using `httpx` via a new `Adapter`) to the new microservice's API.
+6.  **Deployment:** Deploy the new service independently.
+7.  **Consider Patterns:** Patterns like the Strangler Fig can be used for gradual migration, routing requests to the new service piece by piece.
+
+By starting with a well-structured Modular Monolith, we gain initial velocity and simplicity while keeping the door open for a transition to microservices driven by real needs, rather than by default assumption.
+
+## 4. Layered Architecture - The Core Pattern
 
 To ensure Separation of Concerns, Testability, and Maintainability, all backend implementations **MUST** follow this five-layer architecture pattern.
 
-**3.1. High-Level Overview:**
+**4.1. High-Level Overview:**
 
 This diagram shows the main layers and their dependencies:
 
@@ -57,7 +111,7 @@ flowchart TD
 
 ```
 
-**3.2. The Five Layers Defined:**
+**4.2. The Five Layers Defined:**
 
 1.  **Routes Layer (`app/api/routes/`)**
     *   **Purpose:** Handles incoming HTTP requests and outgoing HTTP responses. Acts as the interface to the outside world.
@@ -122,7 +176,7 @@ flowchart TD
             *   Manage connections, authentication, serialization/deserialization specific to the external system.
             *   Located in subdirectories (e.g., `db/`, `cache/`, `queues/`, `storage/`, `payments/`).
 
-**3.3. Interaction Flow & Rationale:**
+**4.3. Interaction Flow & Rationale:**
 
 This diagram illustrates the primary flow for a typical request involving data access and business logic:
 
@@ -157,7 +211,7 @@ flowchart LR
     *   **Domain Logic (in BP):** Core rules of the business (e.g., "Is this email valid?", "Calculate tax"). Knows nothing about databases or use cases.
     *   **Application Logic (in Workflow):** Orchestration logic for a specific use case (e.g., "To create an employee: first call BP to validate and create entity, then call Repo to save it"). Knows the sequence and coordinates calls to BP and Repositories/Adapters.
 
-**3.4. Handling External Systems:**
+**4.4. Handling External Systems:**
 
 External systems (Queues, Caches, 3rd Party APIs, File Storage, etc.) are accessed via the Adapter Layer, orchestrated typically by the Workflow Layer.
 
@@ -201,7 +255,7 @@ flowchart TD
 *   Inject the **Interface** into the **Workflow** layer.
 *   The Workflow calls methods on the interface to enqueue tasks, upload files, call external APIs, etc.
 
-## 4. Data Handling: Entities & Schemas
+## 5. Data Handling: Entities & Schemas
 
 *   **Domain Entities (`app/domain/entities/`)**:
     *   Represent core business concepts (e.g., `Employee`, `Timesheet`).
@@ -215,14 +269,14 @@ flowchart TD
     *   Used **ONLY** in the Routes Layer for validation and serialization.
     *   Explicit mapping between Entities and Schemas occurs in the Routes Layer (e.g., `EmployeeReadSchema.model_validate(employee_entity)`) or sometimes in the Workflow for complex cases (though returning entities is preferred). Use clear names like `EmployeeCreateSchema`, `EmployeeReadSchema`, `EmployeeUpdateSchema`.
 
-## 5. Data Persistence: Repository Pattern & Direct SQL
+## 6. Data Persistence: Repository Pattern & Direct SQL
 
 *   **Repository Pattern:** All data access **MUST** go through Repository Interfaces defined in the domain layer (`app/domain/interfaces/`). Concrete implementations (`app/infrastructure/repositories/`) use the `DatabaseAdapter`. This decouples the application core from the database specifics.
 *   **Direct SQL (No ORM):** We standardize on direct SQL execution via `asyncpg` for maximum performance control and to avoid ORM complexity/overhead. ORM usage requires an ADR.
 *   **Database Adapter (`app/infrastructure/adapters/db/postgres.py`):** A dedicated adapter implementing `DatabaseAdapter` interface handles `asyncpg` connection pooling, query execution (`fetch_one`, `fetch_all`, `execute`), and transaction management.
 *   **Parameterized Queries:** **MANDATORY** for all SQL execution within Repository implementations to prevent SQL injection vulnerabilities. Use `$1`, `$2`, etc., placeholders passed to `asyncpg` methods. **NEVER use string formatting/interpolation for query parameters.**
 
-## 6. Error Handling
+## 7. Error Handling
 
 *   **Custom Exceptions:** Define specific, custom exception classes (inheriting from `ApplicationException`) in `app/core/exceptions.py` (e.g., `NotFoundException`, `BusinessRuleException`, `DatabaseException`, `AuthorizationException`). Lower layers (BP, Repo Impl, Adapters, Workflow) should raise these meaningful exceptions.
 *   **Exception Propagation:** Exceptions raised in lower layers are generally allowed to propagate upwards.
@@ -233,7 +287,7 @@ flowchart TD
 flowchart BT
     U[Client Application / User]
     EH[Global Exception Handlers]
-    
+
     subgraph Components
         DA[Database Adapter]
         RImpl[Repository Implementation]
@@ -244,7 +298,7 @@ flowchart BT
         DI[Dependency Injection]
         RR[Route Function]
     end
-    
+
     DA -->|"ConnectionError"| RImpl
     RImpl -->|"DB Error"| WF
     RI -->|"NotFound/Exception"| WF
@@ -254,12 +308,12 @@ flowchart BT
     DI -->|"Dependency exceptions"| EH
     RR -->|"Mapping exceptions"| EH
     EH -->|"HTTP Error Response"| U
-    
+
     classDef handler fill:#ffe4e1,stroke:#a33,stroke-width:1px
     class EH handler
 ```
 
-## 7. Technology Stack (Primary)
+## 8. Technology Stack (Primary)
 
 *   **Language:** Python 3.11+
 *   **Framework:** FastAPI
@@ -276,9 +330,9 @@ flowchart BT
 
 *(Alternative stacks like Node.js/TypeScript/Fastify exist but require adherence to the same 5-layer principles and direct SQL access, justified via ADR).*
 
-## 8. Code Structure & Naming Conventions
+## 9. Code Structure & Naming Conventions
 
-**8.1. Canonical Directory Structure (Root Level):**
+**9.1. Canonical Directory Structure (Root Level):**
 
 ```
 .
@@ -337,7 +391,7 @@ flowchart BT
 └── README.md
 ```
 
-**8.2. Naming Conventions:**
+**9.2. Naming Conventions:**
 
 *   **Files/Dirs:** `snake_case`
 *   **Classes/Interfaces/Enums:** `PascalCase`
@@ -352,7 +406,7 @@ flowchart BT
 *   **Methods/Functions/Variables:** `snake_case`
 *   **Filename Suffixes:** `_router.py`, `_workflow.py`, `_bp.py`, `_repository.py` (interface), `sql_..._repository.py` (impl), `_entity.py`, `_schema.py`, `test_... .py`.
 
-## 9. Prescribed TDD Workflow
+## 10. Prescribed TDD Workflow
 
 Development **MUST** follow this Test-Driven Development cycle for features involving multiple layers:
 
@@ -368,16 +422,14 @@ Development **MUST** follow this Test-Driven Development cycle for features invo
 10. **Run API Test (Pass):** Re-run initial API test. It must pass, exercising the full stack.
 11. **Refactor:** Clean up code and tests while keeping all tests passing.
 
-## 10. Supporting Principles (Briefly)
+## 11. Supporting Principles (Briefly)
 
-*   **Performance:** Prioritize efficient `async` code, database query tuning (`EXPLAIN ANALYZE`), appropriate indexing. Use application-level caching cautiously *after* optimizing code/DB (Section 7 of original guide).
-*   **Security:** Use Pydantic for input validation. **MANDATORY Parameterized Queries** are the primary defense against SQL Injection. Use standard JWT/OAuth2 via Adapters. Scan dependencies. Manage secrets via env vars (`.env`) and secure secret stores in deployment. Enforce HTTPS. Implement rate limiting. (Section 10 of original guide).
+*   **Performance:** Prioritize efficient `async` code, database query tuning (`EXPLAIN ANALYZE`), appropriate indexing. Use application-level caching cautiously *after* optimizing code/DB.
+*   **Security:** Use Pydantic for input validation. **MANDATORY Parameterized Queries** are the primary defense against SQL Injection. Use standard JWT/OAuth2 via Adapters. Scan dependencies. Manage secrets via env vars (`.env`) and secure secret stores in deployment. Enforce HTTPS. Implement rate limiting.
 *   **Deployment:** Target Docker containers. Use Environment Variables exclusively for configuration (loaded via `pydantic-settings`).
 *   **Dev Process:** Use Git (GitHub Flow recommended), mandatory PRs/Code Reviews, `pre-commit` hooks for local checks, CI/CD pipeline for automated testing/builds/deployments.
 *   **Documentation:** Maintain living documentation in `/docs` (incl. ADRs for deviations), use Mermaid diagrams.
 
-## 11. Evolution Strategy
+## 12. Evolution Strategy
 
-The Modular Monolith structure and clear layering facilitate future evolution. If a module needs to be extracted into a separate service (due to scaling needs, team structure, etc.), the Workflow Layer often defines the initial contract/API boundary for the new service. Avoid premature decomposition.
-
----
+The Modular Monolith structure and clear layering facilitate future evolution. If a module needs to be extracted into a separate service (due to scaling needs, team structure, etc.), the Workflow Layer often defines the initial contract/API boundary for the new service. Avoid premature decomposition (see Section 3.3 for more details).
