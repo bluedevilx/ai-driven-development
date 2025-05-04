@@ -1,4 +1,6 @@
-# Application Architecture Guide (v2.1)
+Okay, inserting a dedicated section explaining the choice of direct SQL over an ORM into the document.
+
+# Application Architecture Guide (v2.2)
 
 ## 1. Introduction & Philosophy
 
@@ -65,22 +67,22 @@ Our **Layered Architecture** and **Modular Monolith** approach are explicitly de
 
 **How this architecture enables the transition:**
 
-1.  **Well-Defined Module Boundaries:** The internal structure, organized by business capability (ideally mirroring directories like `app/domain/workflows/employee_workflow.py`, `app/domain/business_process/employee_bp.py`, etc.), provides natural seams for extraction.
-2.  **Clear Interfaces (Workflow Layer):** The methods defined in the **Workflow Layer** often serve as the basis for the API contract of a potential new microservice. A call like `await employee_workflow.get_employee_details(emp_id)` within the monolith translates naturally to an API call `GET /employees/{emp_id}` on a new `employee-service`.
-3.  **Repository Pattern:** Each module accesses data via its own repository interface. When extracting a service, that service takes ownership of its corresponding database tables/schema and its repository implementation. Other services needing that data would then call the new service's API instead of its old internal repository.
-4.  **Decoupling via Adapters:** Interactions with external systems are already encapsulated in adapters, making it easier to move those interactions into a dedicated service if needed.
+1.  **Well-Defined Module Boundaries:** The internal structure, organized by business capability provides natural seams for extraction.
+2.  **Clear Interfaces (Workflow Layer):** The methods defined in the Workflow Layer often serve as the basis for the API contract of a potential new microservice.
+3.  **Repository Pattern:** Each module accesses data via its own repository interface. When extracting a service, that service takes ownership of its corresponding database tables/schema and its repository implementation.
+4.  **Decoupling via Adapters:** Interactions with external systems are already encapsulated in adapters.
 
 **The Process (Conceptual):**
 
-1.  **Identify Candidate Module:** Based on specific drivers (e.g., independent scaling needs for the "reporting" module, different technology requirements for a "machine-learning" module, distinct team ownership for "payments"). This decision requires justification via an **ADR**.
-2.  **Define Service API:** Use the existing Workflow methods as a starting point to define the new service's public API contract (e.g., OpenAPI spec).
-3.  **Extract Code:** Move the relevant Routes (if exposing directly), Workflow, Business Process, Entities, Repository Interface, and Repository Implementation code for that module into a new, separate project/repository.
-4.  **Data Migration/Isolation:** Isolate the database schema/tables owned by the new service. This might involve schema migration or setting up a new database instance.
-5.  **Replace Internal Calls with Network Calls:** In the original monolith (or other services), replace direct calls to the extracted module's Workflow/Repository with network calls (e.g., using `httpx` via a new `Adapter`) to the new microservice's API.
-6.  **Deployment:** Deploy the new service independently.
-7.  **Consider Patterns:** Patterns like the Strangler Fig can be used for gradual migration, routing requests to the new service piece by piece.
+1.  **Identify Candidate Module:** Based on specific drivers (scaling, team structure, tech needs). Requires an **ADR**.
+2.  **Define Service API:** Use Workflow methods as a starting point.
+3.  **Extract Code:** Move relevant layers for the module to a new project.
+4.  **Data Migration/Isolation:** Isolate or migrate the service's data.
+5.  **Replace Internal Calls with Network Calls:** Update callers to use the new service's API via an Adapter.
+6.  **Deployment:** Deploy independently.
+7.  **Consider Patterns:** Use Strangler Fig for gradual migration if needed.
 
-By starting with a well-structured Modular Monolith, we gain initial velocity and simplicity while keeping the door open for a transition to microservices driven by real needs, rather than by default assumption.
+By starting with a well-structured Modular Monolith, we gain initial velocity and simplicity while keeping the door open for a transition to microservices driven by real needs.
 
 ## 4. Layered Architecture - The Core Pattern
 
@@ -115,111 +117,62 @@ flowchart TD
 
 1.  **Routes Layer (`app/api/routes/`)**
     *   **Purpose:** Handles incoming HTTP requests and outgoing HTTP responses. Acts as the interface to the outside world.
-    *   **Responsibilities:**
-        *   Define API endpoints (paths, methods) using FastAPI `APIRouter`.
-        *   Define and use Pydantic schemas (`app/schemas/`) for request validation (body, query/path parameters) and response serialization.
-        *   Handle authentication and potentially basic authorization checks (often via FastAPI dependencies).
-        *   Extract data from the request.
-        *   Use Dependency Injection (`app/api/deps.py`) to obtain an instance of the appropriate **Workflow** component.
-        *   Call a *single* method on the injected Workflow instance, passing validated data.
-        *   Map the successful result (often a Domain Entity) from the Workflow layer to the appropriate Pydantic response schema.
-        *   **NO business logic or orchestration logic resides here.**
+    *   **Responsibilities:** Define endpoints, validate/serialize schemas (`app/schemas/`), handle auth, use DI (`app/api/deps.py`) to get a **Workflow**, call a *single* Workflow method, map results to response schemas. **NO business/orchestration logic.**
 
 2.  **Workflow Layer (`app/domain/workflows/`)**
-    *   **Purpose:** Orchestrates application use cases. This layer defines *how* the application achieves a specific goal requested via an API endpoint. It coordinates interactions between domain logic and infrastructure access.
-    *   **Responsibilities:**
-        *   Define methods representing application use cases (e.g., `create_new_employee`, `submit_timesheet`).
-        *   Inject dependencies via `__init__` (typically Business Process components, Repository Interfaces, and other Adapter Interfaces).
-        *   Call methods on **Business Process** components to execute pure domain logic, perform complex validations, or create/manipulate domain entities.
-        *   Call methods on **Repository Interfaces** to request data fetching or persistence operations.
-        *   Call methods on other **Adapter Interfaces** (e.g., `TaskQueueAdapter`, `FileStorageAdapter`, `PaymentGatewayAdapter`) to interact with external systems or trigger background tasks.
-        *   May call methods on *other Workflows* to reuse or decompose complex orchestration logic.
-        *   Implement transaction boundaries if a use case involves multiple data-modifying steps that must succeed or fail together (using `DatabaseAdapter.transaction()`).
-        *   Contain **Application Logic** (orchestration, sequencing calls) but **NOT core Domain Logic**.
-        *   Raise specific, custom application exceptions (`app/core/exceptions.py`) on failure (e.g., `NotFoundException`, `AuthorizationException`).
-        *   Return results (often Domain Entities or simple types) back to the Routes layer. **Does NOT handle HTTP specifics.**
+    *   **Purpose:** Orchestrates application use cases. Defines *how* the application achieves a goal. Coordinates domain logic and infrastructure access.
+    *   **Responsibilities:** Define use case methods, inject & call **Business Process** components (for logic), **Repository Interfaces** (for data), and **Adapter Interfaces** (for external systems/tasks). May call other Workflows. Manages transactions. Contains **Application Logic**, NOT core **Domain Logic**. Raises application exceptions. Returns results (e.g., Domain Entities) to Routes.
 
 3.  **Business Process Layer (`app/domain/business_process/`)**
-    *   **Purpose:** Encapsulates pure, domain-specific business logic, rules, calculations, and validations. This is the heart of the domain model's behavior.
-    *   **Responsibilities:**
-        *   Contain methods or functions representing core business rules (e.g., `validate_timesheet_hours`, `calculate_employee_leave_balance`, `is_valid_status_transition`).
-        *   Operate primarily on Domain Entities (`app/domain/entities/`) and primitive types.
-        *   Perform complex validations beyond simple type checks (which are handled by schemas).
-        *   May create or update the state of Domain Entities according to business rules.
-        *   **MUST NOT contain any I/O operations** (no database calls, no external API calls, no file system access).
-        *   **MUST NOT have dependencies on Repositories or Adapters.**
-        *   Raise `BusinessRuleException` or more specific custom domain exceptions on validation failures or rule violations.
-        *   Return results (e.g., calculated values, validated/updated entities) to the Workflow layer.
-        *   This layer is highly cohesive, testable in isolation, and reusable across different workflows.
+    *   **Purpose:** Encapsulates pure, domain-specific business logic, rules, calculations, and validations.
+    *   **Responsibilities:** Contain core business rules, operate on Domain Entities (`app/domain/entities/`). Perform complex validations. **MUST NOT contain I/O.** **MUST NOT depend on Repositories/Adapters.** Raise `BusinessRuleException`. Return results to Workflow. Highly testable and reusable.
 
 4.  **Repository Layer (Interface) (`app/domain/interfaces/`)**
-    *   **Purpose:** Defines the contract (interface) for data access operations for a specific Domain Entity or aggregate. It abstracts *how* data is persisted or retrieved.
-    *   **Responsibilities:**
-        *   Define an Abstract Base Class (ABC) for each primary Domain Entity requiring persistence (e.g., `EmployeeRepository`, `TimesheetRepository`).
-        *   Define `async` methods representing data operations (e.g., `create`, `get_by_id`, `find_by_email`, `list_all_active`, `update_status`).
-        *   Method signatures accept and return Domain Entities (`app/domain/entities/`) or primitive types/collections thereof (e.g., `Optional[Employee]`, `List[Timesheet]`, `int`).
-        *   **MUST NOT expose any details about the underlying storage mechanism** (no SQL fragments, no specific DB connection objects). It defines *what* data operations are needed, not *how* they are performed.
+    *   **Purpose:** Defines the contract (interface) for data access operations for a specific Domain Entity or aggregate. Abstracts *how* data is persisted/retrieved.
+    *   **Responsibilities:** Define ABCs (e.g., `EmployeeRepository`). Define `async` data operation methods (e.g., `create`, `get_by_id`). Accept/return Domain Entities or primitives. **MUST NOT expose storage details.**
 
 5.  **Adapter Layer (`app/infrastructure/`)**
-    *   **Purpose:** Provides concrete implementations for interfaces defined in the Domain or Core layers and handles all interactions with external systems and infrastructure concerns.
+    *   **Purpose:** Provides concrete implementations for interfaces. Handles all external system interactions.
     *   **Responsibilities:**
-        *   **Repository Implementations (`app/infrastructure/repositories/`)**:
-            *   Implement the corresponding Repository interfaces (e.g., `SQLEmployeeRepository(EmployeeRepository)`).
-            *   Inject and use a specific infrastructure adapter (e.g., `DatabaseAdapter`) to perform the actual I/O.
-            *   Translate domain operations into infrastructure-specific actions (e.g., writing **parameterized SQL queries** for `asyncpg`).
-            *   Map data between Domain Entities and the infrastructure format (e.g., database rows/records).
-            *   Handle infrastructure-specific errors (e.g., database connection errors, unique constraint violations), potentially wrapping them in custom application exceptions (e.g., `DatabaseException`).
-            *   Contain **ONLY data mapping and infrastructure interaction logic. NO business logic.**
-        *   **Infrastructure Adapters (`app/infrastructure/adapters/`)**:
-            *   Implement core or domain interfaces for interacting with external systems (`DatabaseAdapter`, `CacheAdapter`, `TaskQueueAdapter`, `FileStorageAdapter`, `PaymentGatewayAdapter`, etc.).
-            *   Encapsulate the specific details of using a driver, SDK, or HTTP client (`asyncpg`, `boto3`, `httpx`, `celery`, `redis-py`).
-            *   Manage connections, authentication, serialization/deserialization specific to the external system.
-            *   Located in subdirectories (e.g., `db/`, `cache/`, `queues/`, `storage/`, `payments/`).
+        *   **Repository Implementations (`app/infrastructure/repositories/`)**: Implement Repository interfaces (e.g., `SQLEmployeeRepository`). Use `DatabaseAdapter`. Translate domain ops to infrastructure actions (e.g., **parameterized SQL**). Map data between Entities and infrastructure format. Handle infrastructure errors. **ONLY data mapping & infra logic.**
+        *   **Infrastructure Adapters (`app/infrastructure/adapters/`)**: Implement interfaces (`DatabaseAdapter`, `CacheAdapter`, etc.). Encapsulate driver/SDK/client details (`asyncpg`, `boto3`, `httpx`, etc.). Manage connections, auth, serialization.
 
 **4.3. Interaction Flow & Rationale:**
 
-This diagram illustrates the primary flow for a typical request involving data access and business logic:
+This diagram illustrates the primary flow:
 
 ```mermaid
-flowchart TD
+flowchart LR
     WF[Workflow]
-    
+
     subgraph DomainLayer["Application Core / Domain Layer"]
-        BP[Business 
-        Process]
-        RI[Repository 
-        Interface]
-    end      
-    
-    WF -->|"1\. Calls for 
-    logic/validation"| BP
-    WF -->|"2\. Calls for 
-    data access"| RI
-    BP -->|"Returns result or 
-    raises exception"| WF
-    RI -->|"Returns Domain 
-    Entity"| WF
-    
+        BP[Business Process]
+        RI[Repository Interface]
+    end
+
+    WF -->|"1. Calls for logic/validation/entity creation"| BP
+    WF -->|"2. Calls for data access (fetch/persist)"| RI
+    BP -->|"Returns result or raises BusinessRuleException"| WF
+    RI -->|"Returns Domain Entity / Optional / List"| WF
+
     classDef workflow fill:#d6f9d6,stroke:#3a3,stroke-width:2px
     classDef bp fill:#d6d6f9,stroke:#33a,stroke-width:2px
     classDef repo fill:#f9f9d6,stroke:#aa3,stroke-width:2px
     classDef domain fill:#e6ffe6,stroke:#3a3,stroke-width:1px
-    
+
     class WF workflow
     class BP bp
     class RI repo
     class DomainLayer domain
 ```
 
-*   **Key Interaction:** The **Workflow Layer** is the central orchestrator. It calls the **Business Process Layer** for pure domain logic/validation and directly calls methods defined on **Repository Interfaces** for data operations.
-*   **Rationale (BP Purity):** This pattern is chosen specifically to keep the **Business Process Layer absolutely pure** and free from I/O concerns. This makes domain logic highly testable, reusable, and independent of infrastructure details.
-*   **Application vs. Domain Logic:**
-    *   **Domain Logic (in BP):** Core rules of the business (e.g., "Is this email valid?", "Calculate tax"). Knows nothing about databases or use cases.
-    *   **Application Logic (in Workflow):** Orchestration logic for a specific use case (e.g., "To create an employee: first call BP to validate and create entity, then call Repo to save it"). Knows the sequence and coordinates calls to BP and Repositories/Adapters.
+*   **Key Interaction:** Workflow orchestrates, calling BP for pure logic and Repository Interfaces for data ops.
+*   **Rationale (BP Purity):** Keeps BP free from I/O, making it highly testable and reusable.
+*   **Application vs. Domain Logic:** Workflow handles use case orchestration; BP handles core domain rules.
 
 **4.4. Handling External Systems:**
 
-External systems (Queues, Caches, 3rd Party APIs, File Storage, etc.) are accessed via the Adapter Layer, orchestrated typically by the Workflow Layer.
+Accessed via Adapters, typically called by the Workflow Layer.
 
 ```mermaid
 flowchart TD
@@ -256,38 +209,46 @@ flowchart TD
     class InfraLayer infra;
 ```
 
-*   Define an **Interface** (e.g., `TaskQueueAdapter`, `FileStorageAdapter`) in `app/core/interfaces.py` or `app/domain/interfaces/`.
-*   Implement the interface in `app/infrastructure/adapters/` using the specific library/SDK (e.g., `CeleryTaskQueueAdapter`, `S3FileStorageAdapter`).
-*   Inject the **Interface** into the **Workflow** layer.
-*   The Workflow calls methods on the interface to enqueue tasks, upload files, call external APIs, etc.
+*   Define Interface (`app/core/interfaces.py` or `app/domain/interfaces/`).
+*   Implement Adapter (`app/infrastructure/adapters/`) using specific libraries.
+*   Inject Interface into Workflow.
 
 ## 5. Data Handling: Entities & Schemas
 
-*   **Domain Entities (`app/domain/entities/`)**:
-    *   Represent core business concepts (e.g., `Employee`, `Timesheet`).
-    *   Typically implemented as simple `dataclasses` or Pydantic `BaseModel`s.
-    *   May contain methods representing intrinsic entity behavior (rich domain model), but logic involving multiple entities or complex rules usually resides in the BP layer.
-    *   Used internally by Workflow, Business Process, and Repository layers.
-    *   **MUST NOT** be directly exposed by the API Layer. Use the `_entity.py` filename suffix. Use simple class names (e.g., `class Employee:`).
-*   **API Schemas (`app/schemas/`)**:
-    *   Define the data contract for API requests and responses.
-    *   **MUST** use Pydantic `BaseModel`. Define Python `Enum` subclasses for status fields etc.
-    *   Used **ONLY** in the Routes Layer for validation and serialization.
-    *   Explicit mapping between Entities and Schemas occurs in the Routes Layer (e.g., `EmployeeReadSchema.model_validate(employee_entity)`) or sometimes in the Workflow for complex cases (though returning entities is preferred). Use clear names like `EmployeeCreateSchema`, `EmployeeReadSchema`, `EmployeeUpdateSchema`.
+*   **Domain Entities (`app/domain/entities/`)**: Represent core business concepts (e.g., `Employee`). Typically `dataclasses` or Pydantic `BaseModel`s. Used internally by Workflow, BP, Repo layers. **Not exposed by API.** Use `_entity.py` suffix, simple class names (e.g., `class Employee:`).
+*   **API Schemas (`app/schemas/`)**: Define API request/response contracts. **MUST** use Pydantic `BaseModel`. Use Python `Enum`s. **ONLY used in Routes Layer** for validation/serialization. Map Entities <-> Schemas explicitly in Routes. Use names like `EmployeeCreateSchema`, `EmployeeReadSchema`.
 
 ## 6. Data Persistence: Repository Pattern & Direct SQL
 
-*   **Repository Pattern:** All data access **MUST** go through Repository Interfaces defined in the domain layer (`app/domain/interfaces/`). Concrete implementations (`app/infrastructure/repositories/`) use the `DatabaseAdapter`. This decouples the application core from the database specifics.
-*   **Direct SQL (No ORM):** We standardize on direct SQL execution via `asyncpg` for maximum performance control and to avoid ORM complexity/overhead. ORM usage requires an ADR.
-*   **Database Adapter (`app/infrastructure/adapters/db/postgres.py`):** A dedicated adapter implementing `DatabaseAdapter` interface handles `asyncpg` connection pooling, query execution (`fetch_one`, `fetch_all`, `execute`), and transaction management.
-*   **Parameterized Queries:** **MANDATORY** for all SQL execution within Repository implementations to prevent SQL injection vulnerabilities. Use `$1`, `$2`, etc., placeholders passed to `asyncpg` methods. **NEVER use string formatting/interpolation for query parameters.**
+*   **Repository Pattern:** All data access **MUST** go through Repository Interfaces (`app/domain/interfaces/`). Implementations (`app/infrastructure/repositories/`) use the `DatabaseAdapter`.
+*   **Database Adapter (`app/infrastructure/adapters/db/postgres.py`):** Handles `asyncpg` connection pooling, query execution (`fetch_one`, `fetch_all`, `execute`), and transactions.
+
+**6.1. Rationale for Direct SQL over ORM:**
+
+While Object-Relational Mappers (ORMs) like SQLAlchemy or Tortoise ORM are common in the Python ecosystem, this specification standardizes on **direct SQL execution via `asyncpg`**. This is a deliberate choice driven by our core principles:
+
+1.  **Performance Control (Principle #3):** Direct SQL provides maximum transparency and control over database interactions. We can write highly optimized queries tailored to specific use cases and leverage advanced PostgreSQL features without battling potential ORM overhead or unpredictable query generation. Performance is non-negotiable, and direct access gives us the tools to ensure it.
+2.  **Leveraging Database Features:** Allows direct use of PostgreSQL-specific features (JSONB operators, extensions like PostGIS, window functions, CTEs) without waiting for ORM support or working around ORM limitations.
+3.  **Avoiding ORM Impedance Mismatch:** Prevents complexities that can arise when mapping object-oriented paradigms to relational databases (e.g., lazy loading issues (N+1 problems), complex relationship management, identity map challenges).
+4.  **Conceptual Simplicity (within this architecture):** While writing SQL requires effort, it avoids adding another layer of abstraction (the ORM) and its associated configuration, session management, and potential magic. Our layered architecture already provides abstraction via the Repository pattern.
+
+**Mitigating the Downsides:**
+
+*   **SQL Skill Requirement:** We acknowledge this requires developers to be proficient in writing safe, efficient SQL. This is addressed through code reviews, potential team training, and shared best practices (see Supporting Principles).
+*   **Boilerplate:** Writing basic CRUD SQL can be repetitive. This is mitigated by:
+    *   Using the **Repository Pattern** to encapsulate queries.
+    *   Potential use of **code generation tools** (like Cookiecutter, see Section 12) to scaffold basic repository implementations.
+    *   Focusing custom SQL effort on complex queries where it provides the most value.
+*   **Security (SQL Injection):** This risk is explicitly addressed by the **MANDATORY use of Parameterized Queries** via `asyncpg`'s `$1, $2...` placeholders. String formatting/interpolation for query values is strictly forbidden.
+
+This choice aligns with our "Pragmatism over Hype" and "Performance is Non-Negotiable" principles. Using an ORM would require justification via an **ADR**.
 
 ## 7. Error Handling
 
-*   **Custom Exceptions:** Define specific, custom exception classes (inheriting from `ApplicationException`) in `app/core/exceptions.py` (e.g., `NotFoundException`, `BusinessRuleException`, `DatabaseException`, `AuthorizationException`). Lower layers (BP, Repo Impl, Adapters, Workflow) should raise these meaningful exceptions.
-*   **Exception Propagation:** Exceptions raised in lower layers are generally allowed to propagate upwards.
-*   **Global Exception Handlers:** The primary mechanism for converting application exceptions into HTTP responses is via **Global Exception Handlers** defined in `app/api/error_handlers.py` and registered with the FastAPI app instance in `app/main.py`. These handlers catch specific custom exceptions (or base `ApplicationException`) and return appropriate `JSONResponse` objects with correct status codes and detail messages.
-*   **Router Responsibility:** Routers ideally do *not* contain extensive `try...except` blocks for application errors; they rely on the exceptions propagating to the global handlers.
+*   **Custom Exceptions:** Define specific exceptions (`app/core/exceptions.py`) inheriting from `ApplicationException`. Lower layers raise these.
+*   **Exception Propagation:** Exceptions generally propagate upwards.
+*   **Global Exception Handlers:** Primary mechanism (`app/api/error_handlers.py`, registered in `app/main.py`) to catch application exceptions and translate them into appropriate HTTP `JSONResponse` errors (status codes, details).
+*   **Router Responsibility:** Routers ideally rely on global handlers, avoiding complex `try...except` blocks for application errors.
 
 ```mermaid
 flowchart BT
