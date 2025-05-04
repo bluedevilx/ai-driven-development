@@ -230,21 +230,6 @@ flowchart TD
 *   **Router Responsibility:** Routers ideally do *not* contain extensive `try...except` blocks for application errors; they rely on the exceptions propagating to the global handlers.
 
 ```mermaid
-flowchart LR
-    BP[Business Process] -->|"BusinessRuleException"| EH
-    WF[Workflow] -->|"Unhandled exceptions"| EH
-    RImpl[Repository Implementation / Adapter] -->|"Database/External Exception"| WF
-    
-    EH[Global Exception Handlers]
-    U[Client Application / User]
-    
-    EH -->|"HTTP Error Response (e.g., 400, 404, 500)"| U
-    
-    classDef handler fill:#ffe4e1,stroke:#a33,stroke-width:1px
-    class EH handler
-```
-
-```mermaid
 flowchart BT
     U[Client Application / User]
     EH[Global Exception Handlers]
