@@ -1,5 +1,3 @@
-Okay, inserting a dedicated section explaining the choice of direct SQL over an ORM into the document.
-
 # Application Architecture Guide (v2.2)
 
 ## 1. Introduction & Philosophy
