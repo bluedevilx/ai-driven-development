@@ -163,18 +163,18 @@ External systems (Queues, Caches, 3rd Party APIs, File Storage, etc.) are access
 
 ```mermaid
 flowchart TD
-    RI[Repository Interface]
-    WF[Workflow]
+    RI["Repository Interface"]
+    WF["Workflow"]
 
     subgraph InfraLayer["Infrastructure / Adapter Layer"]
-        RImpl[Repository Implementation]
-        DA[Database Adapter]
-        OTH[Other Adapters (Queue, Cache, API, Storage...)]
-        OTH_I[Other Interfaces (Core/Domain)]
+        RImpl["Repository Implementation"]
+        DA["Database Adapter"]
+        OTH["Other Adapters (Queue, Cache, API, Storage...)"]
+        OTH_I["Other Interfaces (Core/Domain)"]
     end
 
-    DB[(Database)]
-    EXT[(External Systems)]
+    DB[("Database")]
+    EXT[("External Systems")]
 
     RImpl -->|"implements"| RI
     RImpl -->|"uses"| DA
@@ -183,17 +183,17 @@ flowchart TD
     OTH -->|"interacts"| EXT
     OTH -->|"implements"| OTH_I
 
-    classDef workflow fill:#d6f9d6,stroke:#3a3,stroke-width:2px
-    classDef repo fill:#f9f9d6,stroke:#aa3,stroke-width:2px
-    classDef adapter fill:#f9d6f9,stroke:#a3a,stroke-width:2px
-    classDef external fill:#ddd,stroke:#666,stroke-width:1px
-    classDef infra fill:#e6e6ff,stroke:#33a,stroke-width:1px
+    classDef workflow fill:#d6f9d6,stroke:#3a3,stroke-width:2px;
+    classDef repo fill:#f9f9d6,stroke:#aa3,stroke-width:2px;
+    classDef adapter fill:#f9d6f9,stroke:#a3a,stroke-width:2px;
+    classDef external fill:#ddd,stroke:#666,stroke-width:1px;
+    classDef infra fill:#e6e6ff,stroke:#33a,stroke-width:1px;
 
-    class WF workflow
-    class RI,RImpl repo
-    class DA,OTH,OTH_I adapter
-    class DB,EXT external
-    class InfraLayer infra
+    class WF workflow;
+    class RI,RImpl repo;
+    class DA,OTH,OTH_I adapter;
+    class DB,EXT external;
+    class InfraLayer infra;
 ```
 
 *   Define an **Interface** (e.g., `TaskQueueAdapter`, `FileStorageAdapter`) in `app/core/interfaces.py` or `app/domain/interfaces/`.
@@ -231,19 +231,17 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-    subgraph Components
-        BP[Business Process] -->|"BusinessRuleException"| EH
-        WF[Workflow] -->|"Unhandled exceptions"| EH
-        RImpl[Repository Implementation / Adapter] -->|"Database/External Exception"| WF # Propagates up
-    end
-
+    BP[Business Process] -->|"BusinessRuleException"| EH
+    WF[Workflow] -->|"Unhandled exceptions"| EH
+    RImpl[Repository Implementation / Adapter] -->|"Database/External Exception"| WF
+    
     EH[Global Exception Handlers]
     U[Client Application / User]
-
+    
     EH -->|"HTTP Error Response (e.g., 400, 404, 500)"| U
-
+    
     classDef handler fill:#ffe4e1,stroke:#a33,stroke-width:1px
-    EH handler
+    class EH handler
 ```
 
 ## 7. Technology Stack (Primary)
