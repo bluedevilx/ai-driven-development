@@ -181,18 +181,24 @@ flowchart TD
 This diagram illustrates the primary flow for a typical request involving data access and business logic:
 
 ```mermaid
-flowchart LR
+flowchart TD
     WF[Workflow]
     
     subgraph DomainLayer["Application Core / Domain Layer"]
-        BP[Business Process]
-        RI[Repository Interface]
-    end
+        BP[Business 
+        Process]
+        RI[Repository 
+        Interface]
+    end      
     
-    WF -->|"1. Calls for logic/validation"| BP
-    WF -->|"2. Calls for data access (fetch/persist)"| RI
-    BP -->|"Returns result or raises BusinessRuleException"| WF
-    RI -->|"Returns Domain Entity / Optional / List"| WF
+    WF -->|"1\. Calls for 
+    logic/validation"| BP
+    WF -->|"2\. Calls for 
+    data access"| RI
+    BP -->|"Returns result or 
+    raises exception"| WF
+    RI -->|"Returns Domain 
+    Entity"| WF
     
     classDef workflow fill:#d6f9d6,stroke:#3a3,stroke-width:2px
     classDef bp fill:#d6d6f9,stroke:#33a,stroke-width:2px
