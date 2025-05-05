@@ -144,12 +144,12 @@ flowchart LR
     WF[Workflow]
 
     subgraph DomainLayer["Application Core / Domain Layer"]
-        BP[Business Process]
-        RI[Repository Interface]
+        BP[Business <br>Process]
+        RI[Repository <br>Interface]
     end
 
-    WF -->|"1. Calls for logic/validation/entity creation"| BP
-    WF -->|"2. Calls for data access (fetch/persist)"| RI
+    WF -->|"1\. Calls for logic/<br>validation/entity creation"| BP
+    WF -->|"2\. Calls for data access (fetch/persist)"| RI
     BP -->|"Returns result or raises BusinessRuleException"| WF
     RI -->|"Returns Domain Entity / Optional / List"| WF
 
