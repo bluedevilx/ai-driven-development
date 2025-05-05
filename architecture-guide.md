@@ -174,25 +174,26 @@ Accessed via Adapters, typically called by the Workflow Layer.
 
 ```mermaid
 flowchart TD
-    RI["Repository Interface"]
+    RI["Repository <br>Interface"]
     WF["Workflow"]
 
     subgraph InfraLayer["Infrastructure / Adapter Layer"]
-        RImpl["Repository Implementation"]
-        DA["Database Adapter"]
+        RImpl["Repository <br>Implementation"]
+        DA["Database <br>Adapter"]
         OTH["Other Adapters (Queue, Cache, API, Storage...)"]
         OTH_I["Other Interfaces (Core/Domain)"]
     end
 
     DB[("Database")]
-    EXT[("External Systems")]
+    EXT[("External <br>Systems")]
 
+    OTH -->|"interacts"| EXT
+    OTH -->|"implements"| OTH_I
     RImpl -->|"implements"| RI
     RImpl -->|"uses"| DA
     DA -->|"SQL"| DB
     WF -->|"calls"| OTH
-    OTH -->|"interacts"| EXT
-    OTH -->|"implements"| OTH_I
+    
 
     classDef workflow fill:#d6f9d6,stroke:#3a3,stroke-width:2px;
     classDef repo fill:#f9f9d6,stroke:#aa3,stroke-width:2px;
