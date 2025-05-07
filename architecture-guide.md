@@ -1,5 +1,7 @@
 # Application Architecture Guide (v2.2)
 
+![SOLID Devloper](https://github.com/bluedevilx/ai-driven-development/blob/main/solid-dev.png?raw=true)
+
 ## 1. Introduction & Philosophy
 
 This guide defines the architectural standards for building our backend API applications. Our core philosophy balances **development velocity** with **long-term application health**, ensuring we can build quickly while creating systems that are maintainable, testable, and performant.
