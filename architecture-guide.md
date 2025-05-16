@@ -1,6 +1,6 @@
 # Application Architecture Guide (v2.4)
 
-## Executive Summary!
+## Executive Summary
 
 This guide outlines the architectural standards for our backend API applications, emphasizing a balance between **development velocity** and **long-term application health**. Key tenets include **Simplicity First**, **Pragmatism over Hype**, and **Performance is Non-Negotiable**.
 
